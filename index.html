@@ -1,0 +1,114 @@
+IMS Project Description................
+The purpose of the project is to solve the business problem presented by a large number of process and replenishment tasks, taking up numerous store hours, and to help resolve stock availability issues.
+
+IMS (Inventory Management System) is a system lead replenishment tool that provides locations to excess inventory in a store and half-hourly picks to colleagues on the shop floor.  The project will help to manage overstocks by providing locations to top stock and back of house locations.  By using max shelf, PI and sales data, products can be replenished as soon as shop floor levels drop below a desired level of fill.  
+
+Any errors are fixed at point of pick which improves availability and drives down the number of unnecessary overstocks.
+
+Perpetual Inventory (PI): A record of the each item in the store’s inventory
+
+----------------------------
+
+-- Run following scripts on PUKNT55244UKA,14481 Server.
+
+-- Create user
+USE master;
+GO
+CREATE LOGIN [UK\SVCIMSPROD] FROM WINDOWS WITH DEFAULT_DATABASE=master
+GO
+
+Use master
+GO
+SELECT name, sid  FROM sys.server_principals  WHERE name = 'UK\SVCIMSPROD'
+Go
+/* Store SID Result from above query: UK\SVCIMSPROD <<SID>> Value */ 
+
+
+-- Create database user
+USE [IGNITE]
+GO
+
+CREATE USER [UK\SVCIMSPROD] FOR LOGIN [UK\SVCIMSPROD];
+
+EXEC sp_addrolemember N'db_datareader', N'UK\SVCIMSPROD';
+GO
+
+
+-- Create user role and grant permission
+USE [IGNITE]
+GO
+
+CREATE ROLE [db_User_Role_IMS]
+GO
+
+
+-- Adding SVCIMSPROD into db_User_Role_IMS role.
+USE [IGNITE]
+GO
+
+EXEC sp_addrolemember N'db_User_Role_IMS', N'UK\SVCIMSPROD' 
+GO
+
+
+-- Grant Execute permission to the role for the stored procedures
+USE [IGNITE]
+GO
+
+GRANT EXECUTE ON [dbo].[USP_HandleError] TO [db_User_Role_IMS]
+Go
+GRANT EXECUTE ON [dbo].[USP_Load_StageToDBO_vwDim_Calendar] TO [db_User_Role_IMS]
+Go
+
+
+------------------------
+
+.rds file
+---------
+
+<?xml version="1.0" encoding="utf-8"?>
+<RptDataSource xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Name="dsrSQLServerIgnite">
+  <ConnectionProperties>
+    <Extension>SQL</Extension>
+    <ConnectString>Data Source=PUKNT55244UKAGL,14481;Initial Catalog=IGNITE</ConnectString>
+    <IntegratedSecurity>true</IntegratedSecurity>
+  </ConnectionProperties>
+  <DataSourceID>fef86933-920d-4a15-b3f3-ac5ceba7e6a5</DataSourceID>
+</RptDataSource>
+
+
+--------------------------
+
+
+Folder creation to deploy SSIS package
+DECLARE @cmd AS Varchar(8000)
+
+Set @cmd = 'Dtutil /sources ' + @@SERVERNAME + ' /fc SQL;\;IMS_Reports'
+EXEC Master..xp_cmdshell @cmd
+GO
+
+
+SSIS Package Deployment
+DECLARE @cmd AS Varchar(8000)
+DECLARE @src AS Varchar(1000)
+
+SET @src = '\\uknts8004\ISD Projects\01 - ISD Project Folders\BICC\IMS Reports\PROD Deployment Scripts\PDW_Deployment_Scripts\Package'
+
+SET @cmd = 'dtutil /FILE "' + @src + '\Src_PDW_IMS_Reports_LDM_PROD_IGNITE_Dly.dtsx" /DestServer ' + @@SERVERNAME + ' /COPY SQL;"\IMS_Reports\Src_PDW_IMS_Reports_LDM_PROD_IGNITE_Dly" /QUIET'
+
+EXEC Master..xp_cmdshell @cmd
+GO
+
+
+SSRS report deployment
+rs -i DeployFolder.rss -s https://reporthub.uk.wal-mart.com/Reportserver -v Parent="/" -v FOLDER="IMS_Reports"  
+
+rs -i DeployFolder.rss -s https://reporthub.uk.wal-mart.com/Reportserver -v Parent="/IMS_Reports" -v FOLDER="Data Sources"
+
+rs -i DeployFolder.rss -s https://reporthub.uk.wal-mart.com/Reportserver -v Parent="/IMS_Reports" -v FOLDER="Data Sets"
+
+rs -i DeployFolder.rss -s https://reporthub.uk.wal-mart.com/Reportserver -v Parent="/IMS_Reports" -v FOLDER="Reports"
+
+rs -i DeployDataSource.rss -s https://reporthub.uk.wal-mart.com/Reportserver -v filename="dsrSQLServerIgnite" -eMgmt2010
+
+rs -i deploy_report.rss -s https://reporthub.uk.wal-mart.com/Reportserver -v ReportName="IMS_Default_Detail_Report" -eMgmt2010
+
